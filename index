@@ -110,7 +110,7 @@
 
 <script>
   // Yaha Google Apps Script se mila Web App URL daalein
-  const GOOGLE_SCRIPT_API_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+  const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzQV-t74bA3a9fBCFnH21VjdlikEspeBCv4geP_FVxLBJ6zR13mlCIbKw74Bo2KcYQ/exec";
 
   let masterDatabase = [];
 
