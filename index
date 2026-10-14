@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BharatNet GP Survey Portal</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f9; padding: 20px; }
+    .card { max-width: 600px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h2 { color: #1a73e8; margin-top: 0; }
+    .section { border: 1px solid #dadce0; padding: 15px; margin-bottom: 20px; border-radius: 6px; }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input, select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+    .btn { background: #1a73e8; color: white; border: none; padding: 10px 15px; margin-top: 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+    .hidden { display: none; }
+    .error { color: red; font-size: 14px; margin-top: 8px; }
+    .loader { color: #1a73e8; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>BharatNet GP Field Survey</h2>
+  
+  <div id="loadingStatus" class="loader">Master Data Load Ho Raha Hai... Kripya Wait Karein.</div>
+
+  <!-- Validation Section -->
+  <div class="section hidden" id="authSection">
+    <h3>1. Validation</h3>
+    <label>Gram Panchayat Code:</label>
+    <input type="text" id="gpCode" placeholder="Enter GP Code">
+
+    <label>Surveyor CSC ID:</label>
+    <input type="text" id="cscId" placeholder="Enter CSC ID">
+
+    <div id="authError" class="error"></div>
+    <button class="btn" onclick="validateAndStart()">Start Survey</button>
+  </div>
+
+  <!-- Main Survey Form -->
+  <form id="surveyForm" class="hidden">
+    <div id="gpHeaderInfo" style="background:#e8f0fe; padding:10px; margin-bottom:15px; border-radius:4px; font-weight:bold;"></div>
+
+    <!-- Section 1: GPON -->
+    <div class="section">
+      <h3>2. GPON Section</h3>
+      <label>i) GPON Installed:</label>
+      <select name="gpon_installed" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+    </div>
+
+    <!-- Section 2: Access Point -->
+    <div class="section">
+      <h3>3. Access Point Section</h3>
+      <label>i) Access Point Survey Status:</label>
+      <select name="ap_survey" required>
+        <option value="">-- Select --</option>
+        <option value="Completed">Completed</option>
+        <option value="Pending">Pending</option>
+      </select>
+
+      <label>ii) Access Point Pole Installed:</label>
+      <select name="ap_pole" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+
+      <label>iii) Access Point Installed:</label>
+      <select name="ap_installed" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+
+      <label>iv) Solar Panel Installed:</label>
+      <select name="solar_installed" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+
+      <label>v) CCU Installed:</label>
+      <select name="ccu_installed" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+
+      <label>vi) Battery Box Installed:</label>
+      <select name="battery_box" required>
+        <option value="">-- Select --</option>
+        <option value="YES">YES</option>
+        <option value="NO">NO</option>
+      </select>
+    </div>
+
+    <!-- Section 3: FTTH (Dynamic) -->
+    <div class="section">
+      <h3>4. FTTH Section</h3>
+      <div id="ftthContainer"></div>
+    </div>
+
+    <button type="submit" class="btn">Submit Survey</button>
+  </form>
+</div>
+
+<script>
+  // Yaha Google Apps Script se mila Web App URL daalein
+  const GOOGLE_SCRIPT_API_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+  let masterDatabase = [];
+
+  // Page Load par Google Sheet se Master Data fetch karna
+  window.addEventListener("DOMContentLoaded", () => {
+    fetch(GOOGLE_SCRIPT_API_URL)
+      .then(response => response.json())
+      .then(data => {
+        masterDatabase = data;
+        document.getElementById("loadingStatus").classList.add("hidden");
+        document.getElementById("authSection").classList.remove("hidden");
+      })
+      .catch(error => {
+        document.getElementById("loadingStatus").innerText = "Data load hone me problem aayi. Page refresh karein.";
+        console.error("Error fetching master data:", error);
+      });
+  });
+
+  function validateAndStart() {
+    const inputGp = document.getElementById("gpCode").value.trim().toUpperCase();
+    const inputCsc = document.getElementById("cscId").value.trim();
+    const errorDiv = document.getElementById("authError");
+    errorDiv.innerText = "";
+
+    // 1. Validate GP Code
+    const matchGP = masterDatabase.find(item => item.gpCode.toUpperCase() === inputGp);
+    if (!matchGP) {
+      errorDiv.innerText = "Error: Yeh GP Code Master Data me nahi hai ya Iska Survey Allowed nahi hai.";
+      return;
+    }
+
+    // 2. Validate CSC ID
+    if (!matchGP.allowedCscIds.includes(inputCsc)) {
+      errorDiv.innerText = "Error: Yeh CSC ID is Gram Panchayat ke liye authorized nahi hai.";
+      return;
+    }
+
+    // GP Info Header
+    document.getElementById("gpHeaderInfo").innerText = 
+      `District: ${matchGP.district} | Block: ${matchGP.block} | GP: ${matchGP.gpName} (${matchGP.gpCode})`;
+
+    // 3. Render FTTH Section (Filter out "-")
+    const ftthContainer = document.getElementById("ftthContainer");
+    ftthContainer.innerHTML = "";
+
+    matchGP.subscribers.forEach(sub => {
+      if (sub.org && sub.org !== "-") {
+        const div = document.createElement("div");
+        div.style.marginBottom = "12px";
+        div.innerHTML = `
+          <label>Subscriber ID ${sub.id}: <strong>${sub.org}</strong></label>
+          <select name="ftth_sub_${sub.id}" required>
+            <option value="">-- Select --</option>
+            <option value="FTTH ROUTER INSTALLED">FTTH ROUTER INSTALLED</option>
+            <option value="FTTH ROUTER NOT INSTALLED">FTTH ROUTER NOT INSTALLED</option>
+          </select>
+        `;
+        ftthContainer.appendChild(div);
+      }
+    });
+
+    document.getElementById("authSection").classList.add("hidden");
+    document.getElementById("surveyForm").classList.remove("hidden");
+  }
+</script>
+
+</body>
+</html>
