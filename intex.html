@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Point & FTTH Survey Portal</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; margin: 0; }
+        .container { max-width: 650px; background: white; margin: 0 auto; padding: 25px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .form-group { margin-bottom: 18px; }
+        label { font-weight: bold; display: block; margin-bottom: 6px; color: #34495e; }
+        select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .card { background: #eef7fc; border-left: 5px solid #3498db; padding: 15px; margin-top: 15px; border-radius: 4px; }
+        .question-box { background: #fff; padding: 10px; margin-bottom: 10px; border: 1px solid #e0e0e0; border-radius: 5px; }
+        .btn-submit { width: 100%; background: #27ae60; color: white; border: none; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 15px; }
+        .btn-submit:hover { background: #219150; }
+        .alert { padding: 10px; background-color: #f8d7da; color: #721c24; border-radius: 5px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Access Point & FTTH Survey</h2>
+    
+    <!-- Cascade Dropdowns -->
+    <div class="form-group">
+        <label>1. District (ज़िला)</label>
+        <select id="districtSelect" onchange="onDistrictChange()">
+            <option value="">-- District चुनें --</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>2. Block (ब्लॉक)</label>
+        <select id="blockSelect" onchange="onBlockChange()" disabled>
+            <option value="">-- Block चुनें --</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>3. Gram Panchayat (ग्राम पंचायत)</label>
+        <select id="gpSelect" onchange="onGPChange()" disabled>
+            <option value="">-- Gram Panchayat चुनें --</option>
+        </select>
+    </div>
+
+    <!-- Survey Forms Container -->
+    <div id="surveyContainer"></div>
+
+    <button id="submitBtn" class="btn-submit" onclick="submitSurvey()" style="display:none;">Survey Submit करें</button>
+</div>
+
+<script>
+    // GOOGLE APPS SCRIPT WEB APP URL HERE
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzOZ20Uc_DJ3PAqrui59ibzfm-ssVdNfPhXLBgSiN6OvN41fnpig0-q_TvfAs91LDXJ/exec"; 
+    
+    let dbData = [];
+    let selectedGPData = null;
+
+    // Fetch Data from Google Sheet API on load
+    window.onload = function() {
+        fetch(SCRIPT_URL)
+            .then(res => res.json())
+            .then(data => {
+                dbData = data;
+                populateDistricts();
+            })
+            .catch(err => alert("डेटा लोड करने में समस्या आई: " + err));
+    };
+
+    function populateDistricts() {
+        const distSelect = document.getElementById('districtSelect');
+        const districts = [...new Set(dbData.map(item => item.district))].sort();
+        districts.forEach(d => {
+            let opt = document.createElement('option');
+            opt.value = d;
+            opt.innerText = d;
+            distSelect.appendChild(opt);
+        });
+    }
+
+    function onDistrictChange() {
+        const dist = document.getElementById('districtSelect').value;
+        const blockSelect = document.getElementById('blockSelect');
+        const gpSelect = document.getElementById('gpSelect');
+        
+        blockSelect.innerHTML = '<option value="">-- Block चुनें --</option>';
+        gpSelect.innerHTML = '<option value="">-- Gram Panchayat चुनें --</option>';
+        gpSelect.disabled = true;
+        document.getElementById('surveyContainer').innerHTML = '';
+        document.getElementById('submitBtn').style.display = 'none';
+
+        if (!dist) { blockSelect.disabled = true; return; }
+
+        const blocks = [...new Set(dbData.filter(x => x.district === dist).map(x => x.block))].sort();
+        blocks.forEach(b => {
+            let opt = document.createElement('option');
+            opt.value = b;
+            opt.innerText = b;
+            blockSelect.appendChild(opt);
+        });
+        blockSelect.disabled = false;
+    }
+
+    function onBlockChange() {
+        const dist = document.getElementById('districtSelect').value;
+        const block = document.getElementById('blockSelect').value;
+        const gpSelect = document.getElementById('gpSelect');
+        
+        gpSelect.innerHTML = '<option value="">-- Gram Panchayat चुनें --</option>';
+        document.getElementById('surveyContainer').innerHTML = '';
+        document.getElementById('submitBtn').style.display = 'none';
+
+        if (!block) { gpSelect.disabled = true; return; }
+
+        const gps = dbData.filter(x => x.district === dist && x.block === block);
+        gps.forEach(g => {
+            let opt = document.createElement('option');
+            opt.value = g.gpCode;
+            opt.innerText = g.gpName;
+            gpSelect.appendChild(opt);
+        });
+        gpSelect.disabled = false;
+    }
+
+    function onGPChange() {
+        const gpCode = document.getElementById('gpSelect').value;
+        const container = document.getElementById('surveyContainer');
+        container.innerHTML = '';
+        document.getElementById('submitBtn').style.display = 'none';
+
+        if (!gpCode) return;
+
+        selectedGPData = dbData.find(x => x.gpCode == gpCode);
+        let hasActiveSurvey = false;
+
+        // --- ACCESS POINT SURVEY LOGIC ---
+        if (selectedGPData.apStatus && selectedGPData.apStatus.toUpperCase() === 'INSTALLED') {
+            hasActiveSurvey = true;
+            let apHtml = `
+                <div class="card">
+                    <h3>📡 Access Point Survey</h3>
+                    <div class="question-box">
+                        <label>1. Access Point - Pole Installed?</label>
+                        <select id="ap_pole"><option value="YES">YES</option><option value="NO">NO</option></select>
+                    </div>
+                    <div class="question-box">
+                        <label>2. Access Point Installed?</label>
+                        <select id="ap_inst"><option value="YES">YES</option><option value="NO">NO</option></select>
+                    </div>
+                    <div class="question-box">
+                        <label>3. Solar Installed?</label>
+                        <select id="solar_inst"><option value="YES">YES</option><option value="NO">NO</option></select>
+                    </div>
+                    <div class="question-box">
+                        <label>4. CCU Installed?</label>
+                        <select id="ccu_inst"><option value="YES">YES</option><option value="NO">NO</option></select>
+                    </div>
+                    <div class="question-box">
+                        <label>5. Battery Installed?</label>
+                        <select id="bat_inst"><option value="YES">YES</option><option value="NO">NO</option></select>
+                    </div>
+                </div>`;
+            container.innerHTML += apHtml;
+        } else {
+            container.innerHTML += `<div class="alert">⚠️ Access Point status "NOT INSTALLED" है, इसका सर्वे नहीं होगा।</div>`;
+        }
+
+        // --- FTTH SURVEY LOGIC ---
+        if (selectedGPData.ftthStatus && selectedGPData.ftthStatus.toUpperCase() === 'INSTALLED' && selectedGPData.subscribers.length > 0) {
+            hasActiveSurvey = true;
+            let ftthHtml = `<div class="card"><h3>🔌 FTTH Survey (Subscribers)</h3>`;
+            selectedGPData.subscribers.forEach((sub, idx) => {
+                ftthHtml += `
+                    <div class="question-box">
+                        <p><strong>Organisation:</strong> ${sub.org} | <strong>ID:</strong> ${sub.id}</p>
+                        <label>Router Installed?</label>
+                        <select id="ftth_router_${idx}">
+                            <option value="YES">YES</option>
+                            <option value="NO">NO</option>
+                        </select>
+                    </div>`;
+            });
+            ftthHtml += `</div>`;
+            container.innerHTML += ftthHtml;
+        } else {
+            container.innerHTML += `<div class="alert">⚠️ FTTH status "NOT INSTALLED" है या कोई Subscriber मौजूद नहीं है।</div>`;
+        }
+
+        if (hasActiveSurvey) {
+            document.getElementById('submitBtn').style.display = 'block';
+        }
+    }
+
+    function submitSurvey() {
+        let records = [];
+
+        // Collect AP Survey Data
+        if (selectedGPData.apStatus && selectedGPData.apStatus.toUpperCase() === 'INSTALLED') {
+            records.push({
+                district: selectedGPData.district,
+                block: selectedGPData.block,
+                gpName: selectedGPData.gpName,
+                surveyType: "AP",
+                apPole: document.getElementById('ap_pole').value,
+                apInstalled: document.getElementById('ap_inst').value,
+                solarInstalled: document.getElementById('solar_inst').value,
+                ccuInstalled: document.getElementById('ccu_inst').value,
+                batteryInstalled: document.getElementById('bat_inst').value
+            });
+        }
+
+        // Collect FTTH Survey Data
+        if (selectedGPData.ftthStatus && selectedGPData.ftthStatus.toUpperCase() === 'INSTALLED') {
+            selectedGPData.subscribers.forEach((sub, idx) => {
+                records.push({
+                    district: selectedGPData.district,
+                    block: selectedGPData.block,
+                    gpName: selectedGPData.gpName,
+                    surveyType: "FTTH",
+                    subId: sub.id,
+                    org: sub.org,
+                    routerInstalled: document.getElementById(`ftth_router_${idx}`).value
+                });
+            });
+        }
+
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').innerText = 'सहेज रहा है...';
+
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ records: records })
+        })
+        .then(res => res.json())
+        .then(res => {
+            alert("Survey सफलतापूर्वक जमा हो गया है!");
+            location.reload();
+        })
+        .catch(err => {
+            alert("Error: " + err);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = 'Survey Submit करें';
+        });
+    }
+</script>
+
+</body>
+</html>
