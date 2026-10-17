@@ -15,6 +15,7 @@
         .question-box { background: #fff; padding: 10px; margin-bottom: 10px; border: 1px solid #e0e0e0; border-radius: 5px; }
         .btn-submit { width: 100%; background: #27ae60; color: white; border: none; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 15px; }
         .btn-submit:hover { background: #219150; }
+        .btn-submit:disabled { background: #95a5a6; cursor: not-allowed; }
         .alert { padding: 10px; background-color: #f8d7da; color: #721c24; border-radius: 5px; margin-top: 10px; }
     </style>
 </head>
@@ -22,8 +23,7 @@
 
 <div class="container">
     <h2>Access Point & FTTH Survey</h2>
-    
-    <!-- Cascade Dropdowns -->
+
     <div class="form-group">
         <label>1. District (ज़िला)</label>
         <select id="districtSelect" onchange="onDistrictChange()">
@@ -45,33 +45,44 @@
         </select>
     </div>
 
-    <!-- Survey Forms Container -->
     <div id="surveyContainer"></div>
 
     <button id="submitBtn" class="btn-submit" onclick="submitSurvey()" style="display:none;">Survey Submit करें</button>
 </div>
 
 <script>
-    // GOOGLE APPS SCRIPT WEB APP URL HERE
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwc5KWLKVvdBgXYMfWox8Wc2EsOwKNGEWZ5vj7ZnvPNg0Iepyr0VqaFZx-wUGGG5sDO/exec"; 
-    
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwc5KWLKVvdBgXYMfWox8Wc2EsOwKNGEWZ5vj7ZnvPNg0Iepyr0VqaFZx-wUGGG5sDO/exec";
+
     let dbData = [];
     let selectedGPData = null;
 
-    // Fetch Data from Google Sheet API on load
     window.onload = function() {
+        loadSurveyData();
+    };
+
+    function loadSurveyData() {
         fetch(SCRIPT_URL)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('Failed to fetch survey data');
+                }
+                return res.json();
+            })
             .then(data => {
-                dbData = data;
+                dbData = Array.isArray(data) ? data : [];
                 populateDistricts();
             })
-            .catch(err => alert("डेटा लोड करने में समस्या आई: " + err));
-    };
+            .catch(err => {
+                console.error(err);
+                alert("डेटा लोड करने में समस्या आई। कृपया बाद में पुनः प्रयास करें।");
+            });
+    }
 
     function populateDistricts() {
         const distSelect = document.getElementById('districtSelect');
-        const districts = [...new Set(dbData.map(item => item.district))].sort();
+        distSelect.innerHTML = '<option value="">-- District चुनें --</option>';
+
+        const districts = [...new Set(dbData.map(item => item && item.district).filter(Boolean))].sort();
         districts.forEach(d => {
             let opt = document.createElement('option');
             opt.value = d;
@@ -84,16 +95,20 @@
         const dist = document.getElementById('districtSelect').value;
         const blockSelect = document.getElementById('blockSelect');
         const gpSelect = document.getElementById('gpSelect');
-        
+
         blockSelect.innerHTML = '<option value="">-- Block चुनें --</option>';
         gpSelect.innerHTML = '<option value="">-- Gram Panchayat चुनें --</option>';
         gpSelect.disabled = true;
         document.getElementById('surveyContainer').innerHTML = '';
         document.getElementById('submitBtn').style.display = 'none';
+        document.getElementById('submitBtn').disabled = false;
 
-        if (!dist) { blockSelect.disabled = true; return; }
+        if (!dist) {
+            blockSelect.disabled = true;
+            return;
+        }
 
-        const blocks = [...new Set(dbData.filter(x => x.district === dist).map(x => x.block))].sort();
+        const blocks = [...new Set(dbData.filter(x => x && x.district === dist).map(x => x.block).filter(Boolean))].sort();
         blocks.forEach(b => {
             let opt = document.createElement('option');
             opt.value = b;
@@ -107,14 +122,18 @@
         const dist = document.getElementById('districtSelect').value;
         const block = document.getElementById('blockSelect').value;
         const gpSelect = document.getElementById('gpSelect');
-        
+
         gpSelect.innerHTML = '<option value="">-- Gram Panchayat चुनें --</option>';
         document.getElementById('surveyContainer').innerHTML = '';
         document.getElementById('submitBtn').style.display = 'none';
+        document.getElementById('submitBtn').disabled = false;
 
-        if (!block) { gpSelect.disabled = true; return; }
+        if (!block) {
+            gpSelect.disabled = true;
+            return;
+        }
 
-        const gps = dbData.filter(x => x.district === dist && x.block === block);
+        const gps = dbData.filter(x => x && x.district === dist && x.block === block);
         gps.forEach(g => {
             let opt = document.createElement('option');
             opt.value = g.gpCode;
@@ -127,16 +146,24 @@
     function onGPChange() {
         const gpCode = document.getElementById('gpSelect').value;
         const container = document.getElementById('surveyContainer');
+        const submitBtn = document.getElementById('submitBtn');
+
         container.innerHTML = '';
-        document.getElementById('submitBtn').style.display = 'none';
+        submitBtn.style.display = 'none';
+        submitBtn.disabled = false;
 
         if (!gpCode) return;
 
-        selectedGPData = dbData.find(x => x.gpCode == gpCode);
+        selectedGPData = dbData.find(x => x && x.gpCode == gpCode) || null;
+        if (!selectedGPData) {
+            container.innerHTML = '<div class="alert">⚠️ चयनित ग्राम पंचायत डेटा उपलब्ध नहीं है।</div>';
+            return;
+        }
+
         let hasActiveSurvey = false;
 
-        // --- ACCESS POINT SURVEY LOGIC ---
-        if (selectedGPData.apStatus && selectedGPData.apStatus.toUpperCase() === 'INSTALLED') {
+        const apInstalled = selectedGPData.apStatus && String(selectedGPData.apStatus).trim().toUpperCase() === 'INSTALLED';
+        if (apInstalled) {
             hasActiveSurvey = true;
             let apHtml = `
                 <div class="card">
@@ -164,17 +191,19 @@
                 </div>`;
             container.innerHTML += apHtml;
         } else {
-            container.innerHTML += `<div class="alert">⚠️ Access Point status "NOT INSTALLED" है, इसका सर्वे नहीं होगा।</div>`;
+            container.innerHTML += '<div class="alert">⚠️ Access Point status "NOT INSTALLED" है, इसका सर्वे नहीं होगा।</div>';
         }
 
-        // --- FTTH SURVEY LOGIC ---
-        if (selectedGPData.ftthStatus && selectedGPData.ftthStatus.toUpperCase() === 'INSTALLED' && selectedGPData.subscribers.length > 0) {
+        const ftthInstalled = selectedGPData.ftthStatus && String(selectedGPData.ftthStatus).trim().toUpperCase() === 'INSTALLED';
+        const hasSubscribers = Array.isArray(selectedGPData.subscribers) && selectedGPData.subscribers.length > 0;
+
+        if (ftthInstalled && hasSubscribers) {
             hasActiveSurvey = true;
             let ftthHtml = `<div class="card"><h3>🔌 FTTH Survey (Subscribers)</h3>`;
             selectedGPData.subscribers.forEach((sub, idx) => {
                 ftthHtml += `
                     <div class="question-box">
-                        <p><strong>Organisation:</strong> ${sub.org} | <strong>ID:</strong> ${sub.id}</p>
+                        <p><strong>Organisation:</strong> ${sub && sub.org ? sub.org : '-'} | <strong>ID:</strong> ${sub && sub.id ? sub.id : '-'}</p>
                         <label>Router Installed?</label>
                         <select id="ftth_router_${idx}">
                             <option value="YES">YES</option>
@@ -184,20 +213,27 @@
             });
             ftthHtml += `</div>`;
             container.innerHTML += ftthHtml;
+        } else if (ftthInstalled && !hasSubscribers) {
+            container.innerHTML += '<div class="alert">⚠️ FTTH status "INSTALLED" है, लेकिन Subscriber डेटा उपलब्ध नहीं है।</div>';
         } else {
-            container.innerHTML += `<div class="alert">⚠️ FTTH status "NOT INSTALLED" है या कोई Subscriber मौजूद नहीं है।</div>`;
+            container.innerHTML += '<div class="alert">⚠️ FTTH status "NOT INSTALLED" है या कोई Subscriber मौजूद नहीं है।</div>';
         }
 
         if (hasActiveSurvey) {
-            document.getElementById('submitBtn').style.display = 'block';
+            submitBtn.style.display = 'block';
         }
     }
 
     function submitSurvey() {
+        if (!selectedGPData) {
+            alert("कृपया पहले ग्राम पंचायत चुनें।");
+            return;
+        }
+
         let records = [];
 
-        // Collect AP Survey Data
-        if (selectedGPData.apStatus && selectedGPData.apStatus.toUpperCase() === 'INSTALLED') {
+        const apInstalled = selectedGPData.apStatus && String(selectedGPData.apStatus).trim().toUpperCase() === 'INSTALLED';
+        if (apInstalled) {
             records.push({
                 district: selectedGPData.district,
                 block: selectedGPData.block,
@@ -211,37 +247,58 @@
             });
         }
 
-        // Collect FTTH Survey Data
-        if (selectedGPData.ftthStatus && selectedGPData.ftthStatus.toUpperCase() === 'INSTALLED') {
+        const ftthInstalled = selectedGPData.ftthStatus && String(selectedGPData.ftthStatus).trim().toUpperCase() === 'INSTALLED';
+        if (ftthInstalled && Array.isArray(selectedGPData.subscribers)) {
             selectedGPData.subscribers.forEach((sub, idx) => {
+                const routerEl = document.getElementById(`ftth_router_${idx}`);
                 records.push({
                     district: selectedGPData.district,
                     block: selectedGPData.block,
                     gpName: selectedGPData.gpName,
                     surveyType: "FTTH",
-                    subId: sub.id,
-                    org: sub.org,
-                    routerInstalled: document.getElementById(`ftth_router_${idx}`).value
+                    subId: sub && sub.id ? sub.id : '',
+                    org: sub && sub.org ? sub.org : '',
+                    routerInstalled: routerEl ? routerEl.value : 'NO'
                 });
             });
         }
 
-        document.getElementById('submitBtn').disabled = true;
-        document.getElementById('submitBtn').innerText = 'सहेज रहा है...';
+        if (records.length === 0) {
+            alert("इस ग्राम पंचायत के लिए कोई सक्रिय सर्वे उपलब्ध नहीं है।");
+            return;
+        }
+
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'सहेज रहा है...';
 
         fetch(SCRIPT_URL, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ records: records })
         })
-        .then(res => res.json())
         .then(res => {
+            if (!res.ok) {
+                throw new Error('Submit failed');
+            }
+
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                return res.json();
+            }
+            return res.text();
+        })
+        .then(() => {
             alert("Survey सफलतापूर्वक जमा हो गया है!");
             location.reload();
         })
         .catch(err => {
-            alert("Error: " + err);
-            document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').innerText = 'Survey Submit करें';
+            console.error(err);
+            alert("Error: Survey submit failed. Please try again.");
+            submitBtn.disabled = false;
+            submitBtn.innerText = 'Survey Submit करें';
         });
     }
 </script>
