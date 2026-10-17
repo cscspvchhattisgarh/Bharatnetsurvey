@@ -56,6 +56,12 @@
     let dbData = [];
     let selectedGPData = null;
 
+    function isBlankSubscriber(sub) {
+        const org = sub && sub.org ? String(sub.org).trim().toUpperCase() : '';
+        const id = sub && sub.id ? String(sub.id).trim().toUpperCase() : '';
+        return org === 'BLANK' && id === 'BLANK';
+    }
+
     window.onload = function() {
         loadSurveyData();
     };
@@ -195,12 +201,14 @@
         }
 
         const ftthInstalled = selectedGPData.ftthStatus && String(selectedGPData.ftthStatus).trim().toUpperCase() === 'INSTALLED';
-        const hasSubscribers = Array.isArray(selectedGPData.subscribers) && selectedGPData.subscribers.length > 0;
+        const visibleSubscribers = Array.isArray(selectedGPData.subscribers)
+            ? selectedGPData.subscribers.filter(sub => !isBlankSubscriber(sub))
+            : [];
 
-        if (ftthInstalled && hasSubscribers) {
+        if (ftthInstalled && visibleSubscribers.length > 0) {
             hasActiveSurvey = true;
             let ftthHtml = `<div class="card"><h3>🔌 FTTH Survey (Subscribers)</h3>`;
-            selectedGPData.subscribers.forEach((sub, idx) => {
+            visibleSubscribers.forEach((sub, idx) => {
                 ftthHtml += `
                     <div class="question-box">
                         <p><strong>Organisation:</strong> ${sub && sub.org ? sub.org : '-'} | <strong>ID:</strong> ${sub && sub.id ? sub.id : '-'}</p>
@@ -213,7 +221,7 @@
             });
             ftthHtml += `</div>`;
             container.innerHTML += ftthHtml;
-        } else if (ftthInstalled && !hasSubscribers) {
+        } else if (ftthInstalled && visibleSubscribers.length === 0) {
             container.innerHTML += '<div class="alert">⚠️ FTTH status "INSTALLED" है, लेकिन Subscriber डेटा उपलब्ध नहीं है।</div>';
         } else {
             container.innerHTML += '<div class="alert">⚠️ FTTH status "NOT INSTALLED" है या कोई Subscriber मौजूद नहीं है।</div>';
@@ -249,7 +257,8 @@
 
         const ftthInstalled = selectedGPData.ftthStatus && String(selectedGPData.ftthStatus).trim().toUpperCase() === 'INSTALLED';
         if (ftthInstalled && Array.isArray(selectedGPData.subscribers)) {
-            selectedGPData.subscribers.forEach((sub, idx) => {
+            const visibleSubscribers = selectedGPData.subscribers.filter(sub => !isBlankSubscriber(sub));
+            visibleSubscribers.forEach((sub, idx) => {
                 const routerEl = document.getElementById(`ftth_router_${idx}`);
                 records.push({
                     district: selectedGPData.district,
@@ -279,19 +288,22 @@
             },
             body: JSON.stringify({ records: records })
         })
-        .then(res => {
-            if (!res.ok) {
-                throw new Error('Submit failed');
+        .then(async res => {
+            const contentType = res.headers.get('content-type') || '';
+            let responseData = null;
+
+            if (contentType.includes('application/json')) {
+                responseData = await res.json();
+            } else {
+                responseData = await res.text();
             }
 
-            const contentType = res.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                return res.json();
-            }
-            return res.text();
+            console.log('Submit response:', responseData);
+            return responseData;
         })
-        .then(() => {
-            alert("Survey सफलतापूर्वक जमा हो गया है!");
+        .then(response => {
+            const successMessage = (response && response.message) ? response.message : "Survey सफलतापूर्वक जमा हो गया है!";
+            alert(successMessage);
             location.reload();
         })
         .catch(err => {
